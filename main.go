@@ -18,30 +18,31 @@ var (
 	personalStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff9900"))
 )
 
-type model struct {
+type baseModel struct {
 	cursor int
 
-	editMode     bool
-	selectedMode string
-	mode         map[string]lipgloss.Style
-	modeTasks    map[string][]string
-	textInput    textinput.Model
+	editMode       bool
+	insertMode     bool
+	selectedBucket string
+	bucket         map[string]lipgloss.Style
+	bucketTasks    map[string][]string
+	textInput      textinput.Model
 }
 
-func initialModel() model {
+func initialModel() baseModel {
 	ti := textinput.New()
 	ti.TextStyle = inputStyle
 	ti.PromptStyle = inputStyle
 	ti.Cursor.Style = inputStyle
 
-	return model{
-		mode: map[string]lipgloss.Style{
+	return baseModel{
+		bucket: map[string]lipgloss.Style{
 			"work":     workStyle,
 			"academic": academicStyle,
 			"personal": personalStyle,
 		},
-		selectedMode: "work",
-		modeTasks: map[string][]string{
+		selectedBucket: "work",
+		bucketTasks: map[string][]string{
 			"work": {
 				"Buy carrots",
 				"Buy celery",
@@ -58,11 +59,11 @@ func initialModel() model {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m baseModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m baseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 
@@ -70,51 +71,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case " ":
-			if !m.editMode {
+			if !m.editMode && !m.insertMode {
 				m.editMode = true
-				m.textInput.SetValue(m.modeTasks[m.selectedMode][m.cursor])
+				m.textInput.SetValue(m.bucketTasks[m.selectedBucket][m.cursor])
+				m.textInput.Focus()
+			}
+
+		case "n":
+			if !m.editMode && !m.insertMode {
+				m.insertMode = true
+				m.textInput.Placeholder = "Do something..."
+				m.textInput.Width = 14
 				m.textInput.Focus()
 			}
 
 		case "w":
-			if !m.editMode {
-				m.selectedMode = "work"
-				if m.cursor > len(m.modeTasks[m.selectedMode])-1 {
-					m.cursor = len(m.modeTasks[m.selectedMode]) - 1
+			if !m.editMode && !m.insertMode {
+				m.selectedBucket = "work"
+				if m.cursor > len(m.bucketTasks[m.selectedBucket])-1 {
+					m.cursor = len(m.bucketTasks[m.selectedBucket]) - 1
 				}
 			}
 
 		case "e":
-			if !m.editMode {
-				m.selectedMode = "academic"
-				if m.cursor > len(m.modeTasks[m.selectedMode])-1 {
-					m.cursor = len(m.modeTasks[m.selectedMode]) - 1
+			if !m.editMode && !m.insertMode {
+				m.selectedBucket = "academic"
+				if m.cursor > len(m.bucketTasks[m.selectedBucket])-1 {
+					m.cursor = len(m.bucketTasks[m.selectedBucket]) - 1
 				}
 			}
 
 		case "r":
-			if !m.editMode {
-				m.selectedMode = "personal"
-				if m.cursor > len(m.modeTasks[m.selectedMode])-1 {
-					m.cursor = len(m.modeTasks[m.selectedMode]) - 1
+			if !m.editMode && !m.insertMode {
+				m.selectedBucket = "personal"
+				if m.cursor > len(m.bucketTasks[m.selectedBucket])-1 {
+					m.cursor = len(m.bucketTasks[m.selectedBucket]) - 1
 				}
 			}
 
 		case "q":
-			if !m.editMode {
+			if !m.editMode && !m.insertMode {
 				return m, tea.Quit
 			}
 
 		case "up", "k":
-			if !m.editMode {
+			if !m.editMode && !m.insertMode {
 				if m.cursor > 0 {
 					m.cursor--
 				}
 			}
 
 		case "down", "j":
-			if !m.editMode {
-				if m.cursor < len(m.modeTasks[m.selectedMode])-1 {
+			if !m.editMode && !m.insertMode {
+				if m.cursor < len(m.bucketTasks[m.selectedBucket])-1 {
 					m.cursor++
 				}
 			}
@@ -122,7 +131,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.editMode {
 				m.editMode = false
-				m.modeTasks[m.selectedMode][m.cursor] = strings.TrimSpace(m.textInput.Value())
+				m.bucketTasks[m.selectedBucket][m.cursor] = strings.TrimSpace(m.textInput.Value())
+				m.textInput.Blur()
+			} else if m.insertMode {
+				m.insertMode = false
+				m.bucketTasks[m.selectedBucket] = append(m.bucketTasks[m.selectedBucket], strings.TrimSpace(m.textInput.Value()))
 				m.textInput.Blur()
 			}
 
@@ -135,28 +148,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
+func (m baseModel) View() string {
 	s := "Tasks ["
 
-	modes := make([]string, 0, len(m.mode))
-	for k := range m.mode {
-		modes = append(modes, k)
+	buckets := make([]string, 0, len(m.bucket))
+	for k := range m.bucket {
+		buckets = append(buckets, k)
 	}
 
-	slices.Sort(modes)
-	for i := range len(modes) {
-		modes[i] = m.mode[modes[i]].Render(modes[i])
+	slices.Sort(buckets)
+	for i := range len(buckets) {
+		buckets[i] = m.bucket[buckets[i]].Render(buckets[i])
 	}
 
-	s += strings.Join(modes, "|")
+	s += strings.Join(buckets, "|")
 	s += "]\n\n"
 
-	for i, choice := range m.modeTasks[m.selectedMode] {
+	if m.insertMode {
+		s += m.textInput.View() + "\n\n"
+	}
+
+	for i, choice := range m.bucketTasks[m.selectedBucket] {
 		if m.editMode && m.cursor == i {
 			s += m.textInput.View() + "\n"
 		} else {
 			cursor := " "
-			if m.cursor == i {
+			if m.cursor == i && !m.insertMode {
 				cursor = ">"
 			}
 
@@ -167,7 +184,7 @@ func (m model) View() string {
 
 	s += "\nPress q to quit\n"
 
-	return m.mode[m.selectedMode].Render(s)
+	return m.bucket[m.selectedBucket].Render(s)
 }
 
 func main() {
